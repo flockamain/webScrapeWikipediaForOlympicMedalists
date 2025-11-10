@@ -2,6 +2,8 @@ from bs4 import BeautifulSoup
 import requests
 import pandas as pd
 from numbers import Number
+import boto3
+from io import StringIO
 
 url = 'https://en.wikipedia.org/wiki/List_of_multiple_Olympic_medalists'
 headers = {'User-Agent': 'CoolBot/0.0 (https://example.org/coolbot/; coolbot@example.org)'}
@@ -29,16 +31,32 @@ for row in rows:
     # if it is, then the rank is present, so the total must be missing
     # if not, then the total is present, so the rank must be missing
     # if both are missing, add both from previous row
-    if len(cols) == 10 and not isinstance(cols[0], Number): 
-        cols.insert(0, previous_values[0])
-    if len(cols) == 10 and isinstance(cols[0], Number):
-        cols.append(previous_values[10])
     if len(cols) == 9:
         cols.insert(0, previous_values[0])  # Adding rank if missing
         cols.append(previous_values[10])  # Adding total if missing
+    elif len(cols) == 10:
+        if isinstance(previous_values[0], Number) or previous_values[0].isdigit():
+            cols.append(previous_values[10])  # Adding total if missing
+        else:
+            cols.insert(0, previous_values[0])  # Adding rank if missing
     if len(cols) == len(table_titles):  # Ensure the row has the correct number of columns
         length = len(df)
         df.loc[length] = cols
-    previous_values = cols
+        previous_values = cols
 print(df)
-df.to_csv('olympic_medalists.csv', index=False)
+
+# Upload to S3
+s3_client = boto3.client('s3')
+csv_buffer = StringIO()
+df.to_csv(csv_buffer, index=False)
+
+bucket_name = 's3bucketforwebscraper'  # Replace with your bucket name
+file_name = 'olympic_medalists.csv'
+
+s3_client.put_object(
+    Bucket=bucket_name,
+    Key=file_name,
+    Body=csv_buffer.getvalue()
+)
+
+print(f"File uploaded successfully to s3://{bucket_name}/{file_name}")
